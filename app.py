@@ -82,46 +82,72 @@ def read_sensor_data():
     # Khởi tạo cảm biến DHT11 trên GPIO4
     dht_device = adafruit_dht.DHT11(Pin(4))
     
-    config = read_config()
+    # Số lần thử đọc lại khi gặp lỗi
+    max_retries = 3
     
     try:
         while True:
-            try:
-                # Đọc nhiệt độ và độ ẩm
-                temperature = dht_device.temperature
-                humidity = dht_device.humidity
-                
-                if temperature is not None and humidity is not None:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    # Kiểm tra ngưỡng cảnh báo
-                    alert = False
-                    if (temperature > config['temp_threshold_high'] or 
-                        temperature < config['temp_threshold_low'] or
-                        humidity > config['humidity_threshold_high'] or
-                        humidity < config['humidity_threshold_low']):
-                        alert = True
-                    
-                    # Cập nhật dữ liệu hiện tại
-                    current_data = {
-                        'temperature': float(temperature),
-                        'humidity': float(humidity),
-                        'timestamp': timestamp,
-                        'alert': alert
-                    }
-                    
-                    # Lưu dữ liệu vào lịch sử (lưu mỗi 5 phút)
-                    current_minute = datetime.now().minute
-                    if current_minute % 5 == 0:
-                        save_temperature_data(current_data.copy())
-                    
-                    print(f"Nhiệt độ: {temperature:.1f}°C, Độ ẩm: {humidity:.1f}%, Cảnh báo: {alert}")
-                
-            except RuntimeError as e:
-                print(f"Lỗi đọc cảm biến: {e}")
+            # Đọc cấu hình mới nhất
+            config = read_config()
             
-            # Đọc dữ liệu mỗi 2 giây
-            time.sleep(2)
+            retry_count = 0
+            success = False
+            
+            while retry_count < max_retries and not success:
+                try:
+                    # Đọc nhiệt độ và độ ẩm
+                    temperature = dht_device.temperature
+                    humidity = dht_device.humidity
+                    
+                    if temperature is not None and humidity is not None:
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # Kiểm tra ngưỡng cảnh báo
+                        alert = False
+                        if (temperature > config['temp_threshold_high'] or 
+                            temperature < config['temp_threshold_low'] or
+                            humidity > config['humidity_threshold_high'] or
+                            humidity < config['humidity_threshold_low']):
+                            alert = True
+                        
+                        # Cập nhật dữ liệu hiện tại
+                        current_data = {
+                            'temperature': float(temperature),
+                            'humidity': float(humidity),
+                            'timestamp': timestamp,
+                            'alert': alert
+                        }
+                        
+                        # Lưu dữ liệu vào lịch sử (lưu mỗi 5 phút)
+                        current_minute = datetime.now().minute
+                        if current_minute % 5 == 0 and current_minute != getattr(read_sensor_data, 'last_save_minute', -1):
+                            save_temperature_data(current_data.copy())
+                            # Lưu phút cuối cùng đã lưu để tránh lưu nhiều lần trong cùng một phút
+                            read_sensor_data.last_save_minute = current_minute
+                        
+                        print(f"Nhiệt độ: {temperature:.1f}°C, Độ ẩm: {humidity:.1f}%, Cảnh báo: {alert}")
+                        success = True
+                    else:
+                        retry_count += 1
+                        time.sleep(1)
+                
+                except RuntimeError as e:
+                    print(f"Lỗi đọc cảm biến (lần {retry_count+1}/{max_retries}): {e}")
+                    retry_count += 1
+                    # Đợi ngắn trước khi thử lại
+                    time.sleep(1)
+                except Exception as e:
+                    print(f"Lỗi không xác định: {e}")
+                    retry_count += 1
+                    time.sleep(1)
+            
+            # Nếu tất cả các lần thử đều thất bại, đợi lâu hơn trước khi thử lại
+            if not success:
+                print("Không thể đọc dữ liệu sau nhiều lần thử, đợi và thử lại...")
+                time.sleep(5)
+            else:
+                # Đọc dữ liệu mỗi 2 giây nếu thành công
+                time.sleep(2)
             
     except Exception as e:
         print(f"Lỗi luồng đọc cảm biến: {e}")
@@ -174,4 +200,5 @@ if __name__ == '__main__':
     sensor_thread.start()
     
     # Khởi động server Flask
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Tắt threaded để tránh xung đột với luồng đọc cảm biến
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
