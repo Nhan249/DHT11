@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống quản lý nhiệt độ từ xa</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body {
+            padding-top: 20px;
+            background-color: #f7f9fc;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            border-radius: 10px 10px 0 0;
+            font-weight: bold;
+        }
+        .dashboard-card {
+            text-align: center;
+            padding: 15px;
+        }
+        .dashboard-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+        .dashboard-unit {
+            font-size: 1.2rem;
+            color: #6c757d;
+        }
+        .dashboard-label {
+            font-size: 1.2rem;
+            margin-top: 10px;
+        }
+        .temperature-icon {
+            color: #dc3545;
+        }
+        .humidity-icon {
+            color: #0d6efd;
+        }
+        .alert-icon {
+            font-size: 1.5rem;
+            animation: blink 1s infinite;
+        }
+        .alert-normal {
+            color: #198754;
+        }
+        .alert-warning {
+            color: #dc3545;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .threshold-form .input-group {
+            margin-bottom: 15px;
+        }
+        .last-update {
+            font-size: 0.9rem;
+            color: #6c757d;
+            text-align: center;
+            margin-top: 10px;
+        }
+        /* New styles for detailed status */
+        .status-details {
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+        }
+        .status-normal {
+            background-color: rgba(25, 135, 84, 0.1);
+            border: 1px solid #198754;
+        }
+        .status-warning {
+            background-color: rgba(220, 53, 69, 0.1);
+            border: 1px solid #dc3545;
+        }
+        /* Accessibility improvements */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        /* QR code section */
+        .qr-code-section {
+            text-align: center;
+            margin: 20px 0;
+        }
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .dashboard-value {
+                font-size: 2rem;
+            }
+            .dashboard-unit {
+                font-size: 1rem;
+            }
+        }
+        /* Message customization section */
+        .message-form .form-group {
+            margin-bottom: 15px;
+        }
+        .connection-indicator {
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        .offline-alert {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Hệ thống quản lý nhiệt độ từ xa</h1>
+        
+        <!-- Connection alert for offline status -->
+        <div id="offline-alert" class="offline-alert">
+            <i class="fas fa-wifi-slash me-2"></i>Mất kết nối với máy chủ. Đang thử kết nối lại...
+        </div>
+        
+        <div class="row">
+            <!-- Current Temperature -->
+            <div class="col-md-6">
+                <div class="card dashboard-card">
+                    <div>
+                        <i class="fas fa-thermometer-half temperature-icon fa-3x mb-3"></i>
+                        <div class="dashboard-value" id="current-temperature">--</div>
+                        <div class="dashboard-unit">°C</div>
+                        <div class="dashboard-label">Nhiệt độ hiện tại</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Current Humidity -->
+            <div class="col-md-6">
+                <div class="card dashboard-card">
+                    <div>
+                        <i class="fas fa-tint humidity-icon fa-3x mb-3"></i>
+                        <div class="dashboard-value" id="current-humidity">--</div>
+                        <div class="dashboard-unit">%</div>
+                        <div class="dashboard-label">Độ ẩm hiện tại</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Alert status -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div id="alert-status" class="text-center">
+                            <i class="fas fa-check-circle alert-icon alert-normal"></i>
+                            <span class="ms-2">Nhiệt độ và độ ẩm trong ngưỡng an toàn</span>
+                        </div>
+                        <div id="status-details" class="status-details status-normal mt-3">
+                            <p id="status-message">Tất cả các chỉ số đang ở mức an toàn.</p>
+                        </div>
+                        <div class="last-update">Cập nhật lần cuối: <span id="last-update-time">--</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <!-- History chart -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-chart-line me-2"></i>Biểu đồ lịch sử
+                    </div>
+                    <div class="card-body">
+                        <canvas id="historyChart" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Threshold settings -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-sliders-h me-2"></i>Cài đặt ngưỡng
+                    </div>
+                    <div class="card-body">
+                        <form id="threshold-form" class="threshold-form">
+                            <div class="mb-3">
+                                <label for="temp-high" class="form-label">Ngưỡng nhiệt độ:</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">Cao</span>
+                                    <input type="number" class="form-control" id="temp-high" step="0.1" required>
+                                    <span class="input-group-text">°C</span>
+                                </div>
+                                <div class="input-group mt-2">
+                                    <span class="input-group-text">Thấp</span>
+                                    <input type="number" class="form-control" id="temp-low" step="0.1" required>
+                                    <span class="input-group-text">°C</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="humidity-high" class="form-label">Ngưỡng độ ẩm:</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">Cao</span>
+                                    <input type="number" class="form-control" id="humidity-high" step="0.1" required>
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <div class="input-group mt-2">
+                                    <span class="input-group-text">Thấp</span>
+                                    <input type="number" class="form-control" id="humidity-low" step="0.1" required>
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-save me-2"></i>Lưu cài đặt
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Message customization section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-comment-alt me-2"></i>Tùy chỉnh thông báo
+                    </div>
+                    <div class="card-body">
+                        <form id="message-form" class="message-form">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="msg-temp-high" class="form-label">Thông báo nhiệt độ cao:</label>
+                                        <textarea class="form-control" id="msg-temp-high" rows="2"></textarea>
+                                        <small class="form-text text-muted">Sử dụng {threshold} để hiển thị giá trị ngưỡng</small>
+                                    </div>
+                                    <div class="form-group mt-3">
+                                        <label for="msg-temp-low" class="form-label">Thông báo nhiệt độ thấp:</label>
+                                        <textarea class="form-control" id="msg-temp-low" rows="2"></textarea>
+                                        <small class="form-text text-muted">Sử dụng {threshold} để hiển thị giá trị ngưỡng</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="msg-humidity-high" class="form-label">Thông báo độ ẩm cao:</label>
+                                        <textarea class="form-control" id="msg-humidity-high" rows="2"></textarea>
+                                        <small class="form-text text-muted">Sử dụng {threshold} để hiển thị giá trị ngưỡng</small>
+                                    </div>
+                                    <div class="form-group mt-3">
+                                        <label for="msg-humidity-low" class="form-label">Thông báo độ ẩm thấp:</label>
+                                        <textarea class="form-control" id="msg-humidity-low" rows="2"></textarea>
+                                        <small class="form-text text-muted">Sử dụng {threshold} để hiển thị giá trị ngưỡng</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group mt-3">
+                                <label for="msg-normal" class="form-label">Thông báo khi bình thường:</label>
+                                <textarea class="form-control" id="msg-normal" rows="2"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary mt-3 w-100">
+                                <i class="fas fa-save me-2"></i>Lưu tùy chỉnh thông báo
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- QR code section for easy access -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-qrcode me-2"></i>Truy cập nhanh
+                    </div>
+                    <div class="card-body text-center">
+                        <p>Quét mã QR code dưới đây để truy cập hệ thống từ thiết bị di động:</p>
+                        <div id="qrcode" class="qr-code-section">
+                            <img id="qr-image" src="https://api.qrserver.com/v1/create-qr-code/?data=http://localhost:5000&size=200x200" alt="QR Code" class="img-fluid">
+                        </div>
+                        <p class="small text-muted mt-2">Địa chỉ truy cập: <span id="server-address">http://localhost:5000</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="mt-4 mb-4 text-center text-muted">
+            <p>&copy; 2025 Hệ thống quản lý nhiệt độ từ xa</p>
+            <div class="connection-indicator">
+                <span id="connection-status">
+                    <i class="fas fa-circle text-success me-1"></i> Đang kết nối
+                </span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Variable to store chart
+        let historyChart;
+        
+        // Initialize chart
+        function initChart() {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            historyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Nhiệt độ (°C)',
+                            data: [],
+                            borderColor: '#dc3545',
+                            backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: 'Độ ẩm (%)',
+                            data: [],
+                            borderColor: '#0d6efd',
+                            backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update current data
+        function updateCurrentData() {
+            fetch('/api/current', {
+                // Avoid caching
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update connection status
+                    document.getElementById('connection-status').innerHTML = '<i class="fas fa-circle text-success me-1"></i> Đang kết nối';
+                    document.getElementById('offline-alert').style.display = 'none';
+                    connectionErrorCount = 0;
+
+                    if (data && typeof data.temperature !== 'undefined') {
+                        document.getElementById('current-temperature').textContent = data.temperature.toFixed(1);
+                        document.getElementById('current-humidity').textContent = data.humidity.toFixed(1);
+                        document.getElementById('last-update-time').textContent = data.timestamp;
+                        
+                        // Update alert status
+                        const alertStatus = document.getElementById('alert-status');
+                        const statusDetails = document.getElementById('status-details');
+                        
+                        if (data.alert) {
+                            alertStatus.innerHTML = `
+                                <i class="fas fa-exclamation-triangle alert-icon alert-warning"></i>
+                                <span class="ms-2">Cảnh báo! Giá trị vượt ngưỡng cho phép</span>
+                            `;
+                            statusDetails.className = statusDetails.className.replace('status-normal', 'status-warning');
+                        } else {
+                            alertStatus.innerHTML = `
+                                <i class="fas fa-check-circle alert-icon alert-normal"></i>
+                                <span class="ms-2">Nhiệt độ và độ ẩm trong ngưỡng an toàn</span>
+                            `;
+                            statusDetails.className = statusDetails.className.replace('status-warning', 'status-normal');
+                        }
+
+                        // Update detailed status message
+                        document.getElementById('status-message').textContent = data.message || 'Tất cả các chỉ số đang ở mức an toàn.';
+                    } else {
+                        console.error('Invalid data:', data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error getting current data:', error);
+                    handleConnectionError();
+                });
+        }
+        
+        // Update history chart
+        function updateHistoryChart() {
+            fetch('/api/history?limit=20', {
+                // Avoid caching
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && Array.isArray(data) && data.length > 0) {
+                        const labels = data.map(item => {
+                            const time = item.timestamp.split(' ')[1];
+                            return time;
+                        });
+                        const temperatures = data.map(item => item.temperature);
+                        const humidities = data.map(item => item.humidity);
+                        
+                        historyChart.data.labels = labels;
+                        historyChart.data.datasets[0].data = temperatures;
+                        historyChart.data.datasets[1].data = humidities;
+                        historyChart.update();
+                    } else if (data && Array.isArray(data) && data.length === 0) {
+                        console.log('No history data yet');
+                    } else {
+                        console.error('Invalid history data:', data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error getting history data:', error);
+                    handleConnectionError();
+                });
+        }
+        
+        // Get thresholds
+        function getThresholds() {
+            fetch('/api/thresholds')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('temp-high').value = data.temp_threshold_high;
+                    document.getElementById('temp-low').value = data.temp_threshold_low;
+                    document.getElementById('humidity-high').value = data.humidity_threshold_high;
+                    document.getElementById('humidity-low').value = data.humidity_threshold_low;
+                })
+                .catch(error => console.error('Error getting thresholds:', error));
+        }
+        
+        // Get messages
+        function getMessages() {
+            fetch('/api/messages')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('msg-temp-high').value = data.temp_high;
+                    document.getElementById('msg-temp-low').value = data.temp_low;
+                    document.getElementById('msg-humidity-high').value = data.humidity_high;
+                    document.getElementById('msg-humidity-low').value = data.humidity_low;
+                    document.getElementById('msg-normal').value = data.all_normal;
+                })
+                .catch(error => console.error('Error getting messages:', error));
+        }
+        
+        // Handle threshold form submission
+        document.getElementById('threshold-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const data = {
+                temp_threshold_high: parseFloat(document.getElementById('temp-high').value),
+                temp_threshold_low: parseFloat(document.getElementById('temp-low').value),
+                humidity_threshold_high: parseFloat(document.getElementById('humidity-high').value),
+                humidity_threshold_low: parseFloat(document.getElementById('humidity-low').value)
+            };
+            
+            fetch('/api/thresholds', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                alert('Đã lưu cài đặt ngưỡng thành công!');
+            })
+            .catch(error => {
+                console.error('Error saving thresholds:', error);
+                alert('Lỗi khi lưu cài đặt ngưỡng!');
+            });
+        });
+
+        // Handle message form submission
+        document.getElementById('message-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const data = {
+                temp_high: document.getElementById('msg-temp-high').value,
+                temp_low: document.getElementById('msg-temp-low').value,
+                humidity_high: document.getElementById('msg-humidity-high').value,
+                humidity_low: document.getElementById('msg-humidity-low').value,
+                all_normal: document.getElementById('msg-normal').value
+            };
+            
+            fetch('/api/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                alert('Đã lưu tùy chỉnh thông báo thành công!');
+            })
+            .catch(error => {
+                console.error('Error saving messages:', error);
+                alert('Lỗi khi lưu tùy chỉnh thông báo!');
+            });
+        });
+
+        // Variable to track connection errors
+        let connectionErrorCount = 0;
+        let updateInterval;
+        let chartInterval;
+        
+        // Function to handle connection errors
+        function handleConnectionError() {
+            connectionErrorCount++;
+            console.error(`Connection error (${connectionErrorCount}/3)`);
+            
+            // Update connection status
+            document.getElementById('connection-status').innerHTML = 
+                '<i class="fas fa-circle text-danger me-1"></i> Mất kết nối';
+            
+            if (connectionErrorCount >= 3) {
+                document.getElementById('offline-alert').style.display = 'block';
+                
+                // Stop and restart intervals
+                clearInterval(updateInterval);
+                clearInterval(chartInterval);
+                updateInterval = null;
+                chartInterval = null;
+                
+                // Try to reconnect after 5 seconds
+                setTimeout(checkConnectionAndRestart, 5000);
+            }
+        }
+        
+        // Function to check connection and restart if needed
+        function checkConnectionAndRestart() {
+            console.log('Checking connection...');
+            fetch('/api/current', {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log('Connection successful!');
+                    connectionErrorCount = 0;
+                    
+                    // Update connection status
+                    document.getElementById('connection-status').innerHTML = 
+                        '<i class="fas fa-circle text-success me-1"></i> Đang kết nối';
+                    document.getElementById('offline-alert').style.display = 'none';
+                    
+                    // Ensure intervals are running
+                    if (!updateInterval) {
+                        updateInterval = setInterval(updateCurrentData, 3000);
+                    }
+                    if (!chartInterval) {
+                        chartInterval = setInterval(updateHistoryChart, 15000);
+                    }
+                } else {
+                    throw new Error('Connection error');
+                }
+            })
+            .catch(error => {
+                console.error('Connection check failed:', error);
+                // Try again after 5 seconds
+                setTimeout(checkConnectionAndRestart, 5000);
+            });
+        }
+
+        // Update QR code with actual server address
+        function updateQRCode() {
+            const serverProtocol = window.location.protocol;
+            const serverHost = window.location.hostname;
+            const serverPort = window.location.port;
+            const serverAddress = `${serverProtocol}//${serverHost}${serverPort ? ':' + serverPort : ''}`;
+            
+            document.getElementById('server-address').textContent = serverAddress;
+            const qrImage = document.getElementById('qr-image');
+            qrImage.src = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(serverAddress)}&size=200x200`;
+        }
+
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize chart
+            initChart();
+            
+            // Get initial data
+            getThresholds();
+            getMessages();
+            updateCurrentData();
+            updateHistoryChart();
+            updateQRCode();
+            
+            // Start update intervals
+            updateInterval = setInterval(updateCurrentData, 3000);
+            chartInterval = setInterval(updateHistoryChart, 15000);
+            
+            // Check connection every 30 seconds
+            setInterval(checkConnectionAndRestart, 30000);
+        });
+    </script>
+</body>
+</html>
