@@ -1,203 +1,177 @@
 from flask import Flask, render_template, jsonify, request
-import sqlite3
-import datetime
-import threading
+import adafruit_dht
 import time
-import subprocess
+import threading
 import json
 import os
+from datetime import datetime
+from adafruit_blinka.microcontroller.bcm283x.pin import Pin
 
-# Khởi tạo Flask app
 app = Flask(__name__)
 
-# Đường dẫn tới cơ sở dữ liệu
-DB_NAME = 'temperature_data.db'
+# Cấu hình
+CONFIG_FILE = 'config.json'
+DATA_FILE = 'temperature_data.json'
 
-# Ngưỡng nhiệt độ mặc định và hiện tại
-threshold = {
-    'min': 18.0,
-    'max': 30.0
+# Giá trị mặc định
+default_config = {
+    'temp_threshold_high': 30.0,
+    'temp_threshold_low': 20.0,
+    'humidity_threshold_high': 80.0,
+    'humidity_threshold_low': 40.0
 }
 
-# Biến lưu trữ dữ liệu nhiệt độ hiện tại
+# Biến toàn cục lưu trữ dữ liệu hiện tại
 current_data = {
-    'temperature': None,
-    'humidity': None,
-    'timestamp': None,
-    'threshold_min': threshold['min'],
-    'threshold_max': threshold['max']
+    'temperature': 0,
+    'humidity': 0,
+    'timestamp': '',
+    'alert': False
 }
 
-def init_db():
-    """Khởi tạo cơ sở dữ liệu"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS temperature_readings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        temperature REAL,
-        humidity REAL,
-        timestamp TEXT
-    )
-    ''')
+# Đảm bảo các tệp tồn tại
+def ensure_files_exist():
+    if not os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(default_config, f)
     
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS thresholds (
-        id INTEGER PRIMARY KEY,
-        min_temp REAL,
-        max_temp REAL
-    )
-    ''')
-    
-    # Kiểm tra xem đã có ngưỡng nhiệt độ chưa
-    cursor.execute('SELECT COUNT(*) FROM thresholds')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute('INSERT INTO thresholds (id, min_temp, max_temp) VALUES (1, ?, ?)', 
-                      (threshold['min'], threshold['max']))
-    else:
-        # Cập nhật biến threshold từ cơ sở dữ liệu
-        cursor.execute('SELECT min_temp, max_temp FROM thresholds WHERE id = 1')
-        min_temp, max_temp = cursor.fetchone()
-        threshold['min'] = min_temp
-        threshold['max'] = max_temp
-        current_data['threshold_min'] = min_temp
-        current_data['threshold_max'] = max_temp
-        
-    conn.commit()
-    conn.close()
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, 'w') as f:
+            json.dump([], f)
 
-def save_reading(temperature, humidity):
-    """Lưu thông số đo được vào cơ sở dữ liệu"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute('INSERT INTO temperature_readings (temperature, humidity, timestamp) VALUES (?, ?, ?)',
-                  (temperature, humidity, timestamp))
-    conn.commit()
-    conn.close()
-    
-    # Cập nhật dữ liệu hiện tại
-    current_data['temperature'] = temperature
-    current_data['humidity'] = humidity
-    current_data['timestamp'] = timestamp
+# Đọc cấu hình
+def read_config():
+    with open(CONFIG_FILE, 'r') as f:
+        return json.load(f)
 
-def get_latest_readings(limit=50):
-    """Lấy dữ liệu nhiệt độ mới nhất từ cơ sở dữ liệu"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('SELECT temperature, humidity, timestamp FROM temperature_readings ORDER BY id DESC LIMIT ?', (limit,))
-    readings = cursor.fetchall()
-    conn.close()
-    return readings
+# Lưu cấu hình
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f)
 
-def parse_sensor_output(line):
-    """Phân tích dữ liệu từ output của chương trình cảm biến"""
+# Lưu dữ liệu nhiệt độ
+def save_temperature_data(data):
     try:
-        if "Nhiệt độ:" in line and "Độ ẩm:" in line:
-            # Phân tích dữ liệu từ định dạng "Nhiệt độ: XX.X°C, Độ ẩm: XX.X%"
-            parts = line.split(',')
-            temp_part = parts[0].strip()
-            humid_part = parts[1].strip()
-            
-            temperature = float(temp_part.split(':')[1].replace('°C', '').strip())
-            humidity = float(humid_part.split(':')[1].replace('%', '').strip())
-            
-            return temperature, humidity
-    except Exception as e:
-        print(f"Lỗi phân tích dữ liệu: {e}")
+        with open(DATA_FILE, 'r') as f:
+            history = json.load(f)
+    except (json.decoder.JSONDecodeError, FileNotFoundError):
+        history = []
     
-    return None, None
+    # Giới hạn lịch sử lưu trữ (ví dụ: 1000 mẫu)
+    while len(history) >= 1000:
+        history.pop(0)
+    
+    history.append(data)
+    
+    with open(DATA_FILE, 'w') as f:
+        json.dump(history, f)
 
-def monitor_sensor():
-    """Theo dõi dữ liệu từ chương trình cảm biến"""
+# Lấy dữ liệu lịch sử
+def get_temperature_history(limit=100):
     try:
-        # Khởi chạy chương trình cảm biến
-        process = subprocess.Popen(['python3', 'dht11_sensor.py'], 
-                                stdout=subprocess.PIPE, 
-                                stderr=subprocess.PIPE,
-                                universal_newlines=True,
-                                bufsize=1)
-        
-        # Đọc dữ liệu liên tục từ output
-        for line in process.stdout:
-            line = line.strip()
-            print(f"Sensor output: {line}")
-            
-            temperature, humidity = parse_sensor_output(line)
-            if temperature is not None and humidity is not None:
-                print(f"Parsed: Temp={temperature}°C, Humidity={humidity}%")
-                save_reading(temperature, humidity)
+        with open(DATA_FILE, 'r') as f:
+            history = json.load(f)
+            return history[-limit:] if history else []
+    except (json.decoder.JSONDecodeError, FileNotFoundError):
+        return []
+
+# Hàm đọc dữ liệu từ cảm biến DHT11
+def read_sensor_data():
+    global current_data
+    
+    # Khởi tạo cảm biến DHT11 trên GPIO4
+    dht_device = adafruit_dht.DHT11(Pin(4))
+    
+    config = read_config()
+    
+    try:
+        while True:
+            try:
+                # Đọc nhiệt độ và độ ẩm
+                temperature = dht_device.temperature
+                humidity = dht_device.humidity
                 
-                # Kiểm tra ngưỡng nhiệt độ
-                if temperature < threshold['min']:
-                    print(f"CẢNH BÁO: Nhiệt độ {temperature:.1f}°C thấp hơn ngưỡng tối thiểu {threshold['min']}°C")
-                elif temperature > threshold['max']:
-                    print(f"CẢNH BÁO: Nhiệt độ {temperature:.1f}°C cao hơn ngưỡng tối đa {threshold['max']}°C")
-    
+                if temperature is not None and humidity is not None:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Kiểm tra ngưỡng cảnh báo
+                    alert = False
+                    if (temperature > config['temp_threshold_high'] or 
+                        temperature < config['temp_threshold_low'] or
+                        humidity > config['humidity_threshold_high'] or
+                        humidity < config['humidity_threshold_low']):
+                        alert = True
+                    
+                    # Cập nhật dữ liệu hiện tại
+                    current_data = {
+                        'temperature': float(temperature),
+                        'humidity': float(humidity),
+                        'timestamp': timestamp,
+                        'alert': alert
+                    }
+                    
+                    # Lưu dữ liệu vào lịch sử (lưu mỗi 5 phút)
+                    current_minute = datetime.now().minute
+                    if current_minute % 5 == 0:
+                        save_temperature_data(current_data.copy())
+                    
+                    print(f"Nhiệt độ: {temperature:.1f}°C, Độ ẩm: {humidity:.1f}%, Cảnh báo: {alert}")
+                
+            except RuntimeError as e:
+                print(f"Lỗi đọc cảm biến: {e}")
+            
+            # Đọc dữ liệu mỗi 2 giây
+            time.sleep(2)
+            
     except Exception as e:
-        print(f"Lỗi trong quá trình theo dõi cảm biến: {e}")
+        print(f"Lỗi luồng đọc cảm biến: {e}")
     finally:
-        # Cố gắng đóng process nếu nó vẫn chạy
-        if 'process' in locals() and process.poll() is None:
-            process.terminate()
+        dht_device.exit()
 
+# Routes
 @app.route('/')
 def index():
-    """Trang chủ hiển thị dữ liệu nhiệt độ"""
-    return render_template('index.html', thresholds=threshold)
+    return render_template('index.html')
 
-@app.route('/api/temperature')
-def get_temperature():
-    """API trả về dữ liệu nhiệt độ"""
-    readings = get_latest_readings()
-    data = []
-    for reading in readings:
-        data.append({
-            'temperature': reading[0],
-            'humidity': reading[1],
-            'timestamp': reading[2]
-        })
-    return jsonify(data)
-
-@app.route('/api/current')
-def get_current():
-    """API trả về dữ liệu hiện tại"""
+@app.route('/api/current', methods=['GET'])
+def get_current_data():
     return jsonify(current_data)
 
-@app.route('/api/thresholds', methods=['GET', 'POST'])
-def manage_thresholds():
-    """API quản lý ngưỡng nhiệt độ"""
-    global threshold
+@app.route('/api/history', methods=['GET'])
+def get_history():
+    limit = request.args.get('limit', default=100, type=int)
+    return jsonify(get_temperature_history(limit))
+
+@app.route('/api/thresholds', methods=['GET'])
+def get_thresholds():
+    return jsonify(read_config())
+
+@app.route('/api/thresholds', methods=['POST'])
+def update_thresholds():
+    new_config = request.get_json()
     
-    if request.method == 'POST':
-        data = request.get_json()
-        min_temp = float(data.get('min', threshold['min']))
-        max_temp = float(data.get('max', threshold['max']))
-        
-        # Cập nhật ngưỡng nhiệt độ trong cơ sở dữ liệu
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute('UPDATE thresholds SET min_temp = ?, max_temp = ? WHERE id = 1', (min_temp, max_temp))
-        conn.commit()
-        conn.close()
-        
-        # Cập nhật biến threshold và current_data
-        threshold['min'] = min_temp
-        threshold['max'] = max_temp
-        current_data['threshold_min'] = min_temp
-        current_data['threshold_max'] = max_temp
-        
-        return jsonify({'success': True, 'thresholds': threshold})
+    # Kiểm tra và cập nhật cấu hình
+    config = read_config()
     
-    return jsonify(threshold)
+    if 'temp_threshold_high' in new_config:
+        config['temp_threshold_high'] = float(new_config['temp_threshold_high'])
+    if 'temp_threshold_low' in new_config:
+        config['temp_threshold_low'] = float(new_config['temp_threshold_low'])
+    if 'humidity_threshold_high' in new_config:
+        config['humidity_threshold_high'] = float(new_config['humidity_threshold_high'])
+    if 'humidity_threshold_low' in new_config:
+        config['humidity_threshold_low'] = float(new_config['humidity_threshold_low'])
+    
+    save_config(config)
+    return jsonify({"status": "success", "config": config})
 
 if __name__ == '__main__':
-    # Khởi tạo cơ sở dữ liệu
-    init_db()
+    # Đảm bảo tệp cấu hình và dữ liệu tồn tại
+    ensure_files_exist()
     
-    # Bắt đầu thread theo dõi cảm biến
-    sensor_thread = threading.Thread(target=monitor_sensor, daemon=True)
+    # Khởi động luồng đọc dữ liệu cảm biến
+    sensor_thread = threading.Thread(target=read_sensor_data, daemon=True)
     sensor_thread.start()
     
-    # Khởi động ứng dụng Flask
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    # Khởi động server Flask
+    app.run(host='0.0.0.0', port=5000, debug=True)
