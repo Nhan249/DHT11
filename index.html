@@ -232,48 +232,91 @@
         
         // Cập nhật dữ liệu hiện tại
         function updateCurrentData() {
-            fetch('/api/current')
-                .then(response => response.json())
+            fetch('/api/current', {
+                // Thêm cache: 'no-store' để tránh cache
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok: ' + response.status);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    document.getElementById('current-temperature').textContent = data.temperature.toFixed(1);
-                    document.getElementById('current-humidity').textContent = data.humidity.toFixed(1);
-                    document.getElementById('last-update-time').textContent = data.timestamp;
-                    
-                    // Cập nhật trạng thái cảnh báo
-                    const alertStatus = document.getElementById('alert-status');
-                    if (data.alert) {
-                        alertStatus.innerHTML = `
-                            <i class="fas fa-exclamation-triangle alert-icon alert-warning"></i>
-                            <span class="ms-2">Cảnh báo! Giá trị vượt ngưỡng cho phép</span>
-                        `;
+                    if (data && typeof data.temperature !== 'undefined') {
+                        document.getElementById('current-temperature').textContent = data.temperature.toFixed(1);
+                        document.getElementById('current-humidity').textContent = data.humidity.toFixed(1);
+                        document.getElementById('last-update-time').textContent = data.timestamp;
+                        
+                        // Cập nhật trạng thái cảnh báo
+                        const alertStatus = document.getElementById('alert-status');
+                        if (data.alert) {
+                            alertStatus.innerHTML = `
+                                <i class="fas fa-exclamation-triangle alert-icon alert-warning"></i>
+                                <span class="ms-2">Cảnh báo! Giá trị vượt ngưỡng cho phép</span>
+                            `;
+                        } else {
+                            alertStatus.innerHTML = `
+                                <i class="fas fa-check-circle alert-icon alert-normal"></i>
+                                <span class="ms-2">Nhiệt độ và độ ẩm trong ngưỡng an toàn</span>
+                            `;
+                        }
                     } else {
-                        alertStatus.innerHTML = `
-                            <i class="fas fa-check-circle alert-icon alert-normal"></i>
-                            <span class="ms-2">Nhiệt độ và độ ẩm trong ngưỡng an toàn</span>
-                        `;
+                        console.error('Dữ liệu không hợp lệ:', data);
                     }
                 })
-                .catch(error => console.error('Lỗi khi lấy dữ liệu hiện tại:', error));
+                .catch(error => {
+                    console.error('Lỗi khi lấy dữ liệu hiện tại:', error);
+                    // Hiển thị thông báo lỗi cho người dùng
+                    document.getElementById('alert-status').innerHTML = `
+                        <i class="fas fa-exclamation-circle alert-icon alert-warning"></i>
+                        <span class="ms-2">Lỗi khi cập nhật dữ liệu. Thử lại sau...</span>
+                    `;
+                });
         }
         
         // Cập nhật biểu đồ lịch sử
         function updateHistoryChart() {
-            fetch('/api/history?limit=20')
-                .then(response => response.json())
-                .then(data => {
-                    const labels = data.map(item => {
-                        const time = item.timestamp.split(' ')[1];
-                        return time;
-                    });
-                    const temperatures = data.map(item => item.temperature);
-                    const humidities = data.map(item => item.humidity);
-                    
-                    historyChart.data.labels = labels;
-                    historyChart.data.datasets[0].data = temperatures;
-                    historyChart.data.datasets[1].data = humidities;
-                    historyChart.update();
+            fetch('/api/history?limit=20', {
+                // Tránh cache
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok: ' + response.status);
+                    }
+                    return response.json();
                 })
-                .catch(error => console.error('Lỗi khi lấy dữ liệu lịch sử:', error));
+                .then(data => {
+                    if (data && Array.isArray(data) && data.length > 0) {
+                        const labels = data.map(item => {
+                            const time = item.timestamp.split(' ')[1];
+                            return time;
+                        });
+                        const temperatures = data.map(item => item.temperature);
+                        const humidities = data.map(item => item.humidity);
+                        
+                        historyChart.data.labels = labels;
+                        historyChart.data.datasets[0].data = temperatures;
+                        historyChart.data.datasets[1].data = humidities;
+                        historyChart.update();
+                    } else if (data && Array.isArray(data) && data.length === 0) {
+                        console.log('Chưa có dữ liệu lịch sử');
+                    } else {
+                        console.error('Dữ liệu lịch sử không hợp lệ:', data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Lỗi khi lấy dữ liệu lịch sử:', error);
+                });
         }
         
         // Lấy cài đặt ngưỡng
@@ -317,6 +360,66 @@
             });
         });
         
+        // Biến đánh dấu lỗi kết nối
+        let connectionErrorCount = 0;
+        let updateInterval;
+        let chartInterval;
+        
+        // Hàm kiểm tra kết nối server và khởi động lại nếu cần
+        function checkConnectionAndRestart() {
+            console.log('Kiểm tra kết nối...');
+            fetch('/api/current', {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log('Kết nối thành công!');
+                    connectionErrorCount = 0;
+                    // Đảm bảo các interval đang chạy
+                    if (!updateInterval) {
+                        updateInterval = setInterval(updateCurrentData, 3000);
+                    }
+                    if (!chartInterval) {
+                        chartInterval = setInterval(updateHistoryChart, 15000);
+                    }
+                } else {
+                    throw new Error('Lỗi kết nối');
+                }
+            })
+            .catch(error => {
+                connectionErrorCount++;
+                console.error(`Lỗi kết nối (${connectionErrorCount}/3):`, error);
+                
+                if (connectionErrorCount >= 3) {
+                    console.log('Đang thử khởi động lại kết nối...');
+                    // Dừng và khởi động lại các interval
+                    clearInterval(updateInterval);
+                    clearInterval(chartInterval);
+                    updateInterval = null;
+                    chartInterval = null;
+                    
+                    // Hiển thị thông báo đang kết nối lại
+                    document.getElementById('alert-status').innerHTML = `
+                        <i class="fas fa-sync-alt alert-icon alert-warning fa-spin"></i>
+                        <span class="ms-2">Đang kết nối lại với server...</span>
+                    `;
+                    
+                    // Thử kết nối lại sau 5 giây
+                    setTimeout(() => {
+                        updateCurrentData();
+                        updateHistoryChart();
+                        // Khởi động lại các interval
+                        updateInterval = setInterval(updateCurrentData, 3000);
+                        chartInterval = setInterval(updateHistoryChart, 15000);
+                        connectionErrorCount = 0;
+                    }, 5000);
+                }
+            });
+        }
+
         // Khởi tạo trang
         window.addEventListener('load', function() {
             initChart();
@@ -324,9 +427,12 @@
             updateCurrentData();
             updateHistoryChart();
             
-            // Cập nhật dữ liệu mỗi 5 giây
-            setInterval(updateCurrentData, 5000);
-            setInterval(updateHistoryChart, 30000);
+            // Cập nhật dữ liệu thường xuyên hơn (mỗi 3 giây thay vì 5 giây)
+            updateInterval = setInterval(updateCurrentData, 3000);
+            chartInterval = setInterval(updateHistoryChart, 15000);
+            
+            // Kiểm tra kết nối và khởi động lại nếu cần mỗi 60 giây
+            setInterval(checkConnectionAndRestart, 60000);
         });
     </script>
 </body>
