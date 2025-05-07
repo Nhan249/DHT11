@@ -3,378 +3,184 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hệ Thống Quản Lý Nhiệt Độ</title>
+    <title>Hệ thống quản lý nhiệt độ từ xa</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f0f2f5;
-        }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
+            padding-top: 20px;
+            background-color: #f7f9fc;
         }
         .card {
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .current-data {
-            display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-            margin-bottom: 30px;
-        }
-        .data-box {
-            text-align: center;
-            width: 200px;
-            padding: 20px;
-            margin: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .temperature {
-            background-color: #ffeded;
-        }
-        .humidity {
-            background-color: #edf5ff;
-        }
-        .value {
-            font-size: 32px;
+        .card-header {
+            border-radius: 10px 10px 0 0;
             font-weight: bold;
-            margin: 10px 0;
         }
-        .unit {
-            font-size: 18px;
+        .dashboard-card {
+            text-align: center;
+            padding: 15px;
         }
-        .label {
-            color: #666;
-            margin-bottom: 5px;
-        }
-        .status {
-            padding: 5px 10px;
-            border-radius: 4px;
+        .dashboard-value {
+            font-size: 2.5rem;
             font-weight: bold;
-            display: inline-block;
+        }
+        .dashboard-unit {
+            font-size: 1.2rem;
+            color: #6c757d;
+        }
+        .dashboard-label {
+            font-size: 1.2rem;
             margin-top: 10px;
         }
-        .normal {
-            background-color: #dff2bf;
-            color: #4f8a10;
+        .temperature-icon {
+            color: #dc3545;
         }
-        .warning {
-            background-color: #feefb3;
-            color: #9f6000;
+        .humidity-icon {
+            color: #0d6efd;
         }
-        .danger {
-            background-color: #ffbaba;
-            color: #d8000c;
+        .alert-icon {
+            font-size: 1.5rem;
+            animation: blink 1s infinite;
         }
-        .settings {
-            margin-top: 30px;
+        .alert-normal {
+            color: #198754;
         }
-        .form-group {
+        .alert-warning {
+            color: #dc3545;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .threshold-form .input-group {
             margin-bottom: 15px;
         }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        input[type="number"] {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .chart-container {
-            height: 400px;
-            margin-top: 30px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        tr:hover {
-            background-color: #f5f5f5;
-        }
-        .last-updated {
-            color: #666;
-            font-style: italic;
+        .last-update {
+            font-size: 0.9rem;
+            color: #6c757d;
             text-align: center;
             margin-top: 10px;
-        }
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-        }
-        .alert {
-            display: none;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-        }
-        .alert-success {
-            background-color: #dff2bf;
-            color: #4f8a10;
-        }
-        .alert-danger {
-            background-color: #ffbaba;
-            color: #d8000c;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>Hệ Thống Quản Lý Nhiệt Độ Từ Xa</h1>
-            <p>Sử dụng Raspberry Pi 5 và DHT11</p>
-        </div>
+        <h1 class="text-center mb-4">Hệ thống quản lý nhiệt độ từ xa</h1>
         
-        <div id="alert" class="alert"></div>
-        
-        <div class="card">
-            <h2>Dữ Liệu Hiện Tại</h2>
-            <div class="current-data">
-                <div class="data-box temperature">
-                    <div class="label">Nhiệt Độ</div>
-                    <div id="current-temp" class="value">--</div>
-                    <div class="unit">°C</div>
-                    <div id="temp-status" class="status normal">Bình thường</div>
-                </div>
-                <div class="data-box humidity">
-                    <div class="label">Độ Ẩm</div>
-                    <div id="current-humidity" class="value">--</div>
-                    <div class="unit">%</div>
+        <div class="row">
+            <!-- Nhiệt độ hiện tại -->
+            <div class="col-md-6">
+                <div class="card dashboard-card">
+                    <div>
+                        <i class="fas fa-thermometer-half temperature-icon fa-3x mb-3"></i>
+                        <div class="dashboard-value" id="current-temperature">--</div>
+                        <div class="dashboard-unit">°C</div>
+                        <div class="dashboard-label">Nhiệt độ hiện tại</div>
+                    </div>
                 </div>
             </div>
-            <p id="last-updated" class="last-updated">Cập nhật lần cuối: --</p>
-        </div>
-        
-        <div class="card settings">
-            <h2>Cài Đặt Ngưỡng Nhiệt Độ</h2>
-            <div class="form-group">
-                <label for="min-temp">Nhiệt độ tối thiểu (°C):</label>
-                <input type="number" id="min-temp" min="0" max="50" step="0.5">
-            </div>
-            <div class="form-group">
-                <label for="max-temp">Nhiệt độ tối đa (°C):</label>
-                <input type="number" id="max-temp" min="0" max="50" step="0.5">
-            </div>
-            <button id="save-thresholds">Lưu Cài Đặt</button>
-        </div>
-        
-        <div class="card">
-            <h2>Biểu Đồ Nhiệt Độ và Độ Ẩm</h2>
-            <div id="chart-container" class="chart-container">
-                <canvas id="temp-chart"></canvas>
+            
+            <!-- Độ ẩm hiện tại -->
+            <div class="col-md-6">
+                <div class="card dashboard-card">
+                    <div>
+                        <i class="fas fa-tint humidity-icon fa-3x mb-3"></i>
+                        <div class="dashboard-value" id="current-humidity">--</div>
+                        <div class="dashboard-unit">%</div>
+                        <div class="dashboard-label">Độ ẩm hiện tại</div>
+                    </div>
+                </div>
             </div>
         </div>
         
-        <div class="card">
-            <h2>Lịch Sử Dữ Liệu</h2>
-            <div id="data-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Thời Gian</th>
-                            <th>Nhiệt Độ (°C)</th>
-                            <th>Độ Ẩm (%)</th>
-                            <th>Trạng Thái</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-data">
-                        <tr>
-                            <td colspan="4" class="loading">Đang tải dữ liệu...</td>
-                        </tr>
-                    </tbody>
-                </table>
+        <!-- Trạng thái cảnh báo -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <div id="alert-status">
+                            <i class="fas fa-check-circle alert-icon alert-normal"></i>
+                            <span class="ms-2">Nhiệt độ và độ ẩm trong ngưỡng an toàn</span>
+                        </div>
+                        <div class="last-update">Cập nhật lần cuối: <span id="last-update-time">--</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <!-- Biểu đồ lịch sử -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-chart-line me-2"></i>Biểu đồ lịch sử
+                    </div>
+                    <div class="card-body">
+                        <canvas id="historyChart" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Cài đặt ngưỡng -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-sliders-h me-2"></i>Cài đặt ngưỡng
+                    </div>
+                    <div class="card-body">
+                        <form id="threshold-form" class="threshold-form">
+                            <div class="mb-3">
+                                <label class="form-label">Ngưỡng nhiệt độ:</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">Cao</span>
+                                    <input type="number" class="form-control" id="temp-high" step="0.1" required>
+                                    <span class="input-group-text">°C</span>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text">Thấp</span>
+                                    <input type="number" class="form-control" id="temp-low" step="0.1" required>
+                                    <span class="input-group-text">°C</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Ngưỡng độ ẩm:</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">Cao</span>
+                                    <input type="number" class="form-control" id="humidity-high" step="0.1" required>
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text">Thấp</span>
+                                    <input type="number" class="form-control" id="humidity-low" step="0.1" required>
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-save me-2"></i>Lưu cài đặt
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/locale/vi.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    
+
     <script>
-        // Khởi tạo biến toàn cục
-        let thresholds = {
-            min: {{ thresholds.min }},
-            max: {{ thresholds.max }}
-        };
-        let temperatureChart;
-        
-        // Định dạng thời gian
-        moment.locale('vi');
-        
-        // Hàm hiển thị thông báo
-        function showAlert(message, type) {
-            const alert = document.getElementById('alert');
-            alert.textContent = message;
-            alert.className = 'alert ' + type;
-            alert.style.display = 'block';
-            
-            setTimeout(() => {
-                alert.style.display = 'none';
-            }, 5000);
-        }
-        
-        // Hàm cập nhật trạng thái nhiệt độ
-        function updateTemperatureStatus(temperature) {
-            const statusElement = document.getElementById('temp-status');
-            
-            if (temperature < thresholds.min) {
-                statusElement.textContent = 'Quá thấp';
-                statusElement.className = 'status warning';
-            } else if (temperature > thresholds.max) {
-                statusElement.textContent = 'Quá cao';
-                statusElement.className = 'status danger';
-            } else {
-                statusElement.textContent = 'Bình thường';
-                statusElement.className = 'status normal';
-            }
-        }
-        
-        // Hàm lấy trạng thái nhiệt độ dưới dạng text
-        function getTemperatureStatusText(temperature) {
-            if (temperature < thresholds.min) {
-                return 'Quá thấp';
-            } else if (temperature > thresholds.max) {
-                return 'Quá cao';
-            } else {
-                return 'Bình thường';
-            }
-        }
-        
-        // Hàm lấy class CSS cho trạng thái nhiệt độ
-        function getTemperatureStatusClass(temperature) {
-            if (temperature < thresholds.min) {
-                return 'warning';
-            } else if (temperature > thresholds.max) {
-                return 'danger';
-            } else {
-                return 'normal';
-            }
-        }
-        
-        // Hàm cập nhật dữ liệu hiện tại
-        function updateCurrentData() {
-            fetch('/api/current')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.temperature !== null) {
-                        document.getElementById('current-temp').textContent = data.temperature.toFixed(1);
-                        document.getElementById('current-humidity').textContent = data.humidity.toFixed(1);
-                        document.getElementById('last-updated').textContent = 'Cập nhật lần cuối: ' + moment(data.timestamp).format('LLL');
-                        
-                        // Cập nhật trạng thái nhiệt độ
-                        updateTemperatureStatus(data.temperature);
-                        
-                        // Cập nhật ngưỡng nhiệt độ
-                        thresholds.min = data.threshold_min;
-                        thresholds.max = data.threshold_max;
-                        document.getElementById('min-temp').value = thresholds.min;
-                        document.getElementById('max-temp').value = thresholds.max;
-                    }
-                })
-                .catch(error => {
-                    console.error('Lỗi khi lấy dữ liệu hiện tại:', error);
-                });
-        }
-        
-        // Hàm cập nhật biểu đồ
-        function updateChart() {
-            fetch('/api/temperature')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.length > 0) {
-                        // Đảo ngược dữ liệu để hiển thị theo thứ tự thời gian
-                        data.reverse();
-                        
-                        const timestamps = data.map(item => moment(item.timestamp).format('LT'));
-                        const temperatures = data.map(item => item.temperature);
-                        const humidities = data.map(item => item.humidity);
-                        
-                        // Cập nhật dữ liệu biểu đồ
-                        temperatureChart.data.labels = timestamps;
-                        temperatureChart.data.datasets[0].data = temperatures;
-                        temperatureChart.data.datasets[1].data = humidities;
-                        temperatureChart.update();
-                        
-                        // Cập nhật bảng lịch sử
-                        updateHistoryTable(data);
-                    }
-                })
-                .catch(error => {
-                    console.error('Lỗi khi lấy dữ liệu nhiệt độ:', error);
-                });
-        }
-        
-        // Hàm cập nhật bảng lịch sử
-        function updateHistoryTable(data) {
-            const tableBody = document.getElementById('history-data');
-            tableBody.innerHTML = '';
-            
-            data.forEach(item => {
-                const row = document.createElement('tr');
-                
-                const timeCell = document.createElement('td');
-                timeCell.textContent = moment(item.timestamp).format('LLL');
-                
-                const tempCell = document.createElement('td');
-                tempCell.textContent = item.temperature.toFixed(1);
-                
-                const humidityCell = document.createElement('td');
-                humidityCell.textContent = item.humidity.toFixed(1);
-                
-                const statusCell = document.createElement('td');
-                const statusSpan = document.createElement('span');
-                statusSpan.textContent = getTemperatureStatusText(item.temperature);
-                statusSpan.className = 'status ' + getTemperatureStatusClass(item.temperature);
-                statusCell.appendChild(statusSpan);
-                
-                row.appendChild(timeCell);
-                row.appendChild(tempCell);
-                row.appendChild(humidityCell);
-                row.appendChild(statusCell);
-                
-                tableBody.appendChild(row);
-            });
-        }
+        // Biến lưu trữ biểu đồ
+        let historyChart;
         
         // Khởi tạo biểu đồ
         function initChart() {
-            const ctx = document.getElementById('temp-chart').getContext('2d');
-            temperatureChart = new Chart(ctx, {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            historyChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: [],
@@ -382,17 +188,19 @@
                         {
                             label: 'Nhiệt độ (°C)',
                             data: [],
-                            borderColor: 'rgb(255, 99, 132)',
-                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                            tension: 0.2,
+                            borderColor: '#dc3545',
+                            backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
                             fill: true
                         },
                         {
                             label: 'Độ ẩm (%)',
                             data: [],
-                            borderColor: 'rgb(54, 162, 235)',
-                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
-                            tension: 0.2,
+                            borderColor: '#0d6efd',
+                            backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
                             fill: true
                         }
                     ]
@@ -400,90 +208,126 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: 'Biểu đồ nhiệt độ và độ ẩm theo thời gian'
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            }
                         },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false
-                        },
-                        legend: {
-                            position: 'bottom'
+                        y: {
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
                         }
                     },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            suggestedMax: 50
+                    plugins: {
+                        legend: {
+                            position: 'top'
                         }
                     }
                 }
             });
         }
         
-        // Khởi tạo trang
-        function initPage() {
-            // Khởi tạo biểu đồ
-            initChart();
-            
-            // Cập nhật dữ liệu ban đầu
-            updateCurrentData();
-            updateChart();
-            
-            // Cập nhật dữ liệu theo định kỳ
-            setInterval(updateCurrentData, 5000); // Cập nhật dữ liệu hiện tại mỗi 5 giây
-            setInterval(updateChart, 30000); // Cập nhật biểu đồ và lịch sử mỗi 30 giây
-            
-            // Thiết lập sự kiện cho nút lưu ngưỡng nhiệt độ
-            document.getElementById('save-thresholds').addEventListener('click', function() {
-                const minTemp = parseFloat(document.getElementById('min-temp').value);
-                const maxTemp = parseFloat(document.getElementById('max-temp').value);
-                
-                if (isNaN(minTemp) || isNaN(maxTemp)) {
-                    showAlert('Vui lòng nhập giá trị hợp lệ!', 'alert-danger');
-                    return;
-                }
-                
-                if (minTemp >= maxTemp) {
-                    showAlert('Nhiệt độ tối thiểu phải nhỏ hơn nhiệt độ tối đa!', 'alert-danger');
-                    return;
-                }
-                
-                fetch('/api/thresholds', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        min: minTemp,
-                        max: maxTemp
-                    })
-                })
+        // Cập nhật dữ liệu hiện tại
+        function updateCurrentData() {
+            fetch('/api/current')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
-                        showAlert('Đã cập nhật ngưỡng nhiệt độ thành công!', 'alert-success');
-                        thresholds = data.thresholds;
-                        updateCurrentData(); // Cập nhật lại dữ liệu hiện tại
+                    document.getElementById('current-temperature').textContent = data.temperature.toFixed(1);
+                    document.getElementById('current-humidity').textContent = data.humidity.toFixed(1);
+                    document.getElementById('last-update-time').textContent = data.timestamp;
+                    
+                    // Cập nhật trạng thái cảnh báo
+                    const alertStatus = document.getElementById('alert-status');
+                    if (data.alert) {
+                        alertStatus.innerHTML = `
+                            <i class="fas fa-exclamation-triangle alert-icon alert-warning"></i>
+                            <span class="ms-2">Cảnh báo! Giá trị vượt ngưỡng cho phép</span>
+                        `;
                     } else {
-                        showAlert('Có lỗi xảy ra khi cập nhật ngưỡng nhiệt độ!', 'alert-danger');
+                        alertStatus.innerHTML = `
+                            <i class="fas fa-check-circle alert-icon alert-normal"></i>
+                            <span class="ms-2">Nhiệt độ và độ ẩm trong ngưỡng an toàn</span>
+                        `;
                     }
                 })
-                .catch(error => {
-                    showAlert('Có lỗi xảy ra khi cập nhật ngưỡng nhiệt độ!', 'alert-danger');
-                    console.error('Lỗi khi cập nhật ngưỡng nhiệt độ:', error);
-                });
-            });
-            
-            // Thiết lập giá trị ban đầu cho các trường nhập liệu
-            document.getElementById('min-temp').value = thresholds.min;
-            document.getElementById('max-temp').value = thresholds.max;
+                .catch(error => console.error('Lỗi khi lấy dữ liệu hiện tại:', error));
         }
         
-        // Khởi tạo khi trang đã tải xong
-        document.addEventListener('DOMContentLoaded', initPage);
+        // Cập nhật biểu đồ lịch sử
+        function updateHistoryChart() {
+            fetch('/api/history?limit=20')
+                .then(response => response.json())
+                .then(data => {
+                    const labels = data.map(item => {
+                        const time = item.timestamp.split(' ')[1];
+                        return time;
+                    });
+                    const temperatures = data.map(item => item.temperature);
+                    const humidities = data.map(item => item.humidity);
+                    
+                    historyChart.data.labels = labels;
+                    historyChart.data.datasets[0].data = temperatures;
+                    historyChart.data.datasets[1].data = humidities;
+                    historyChart.update();
+                })
+                .catch(error => console.error('Lỗi khi lấy dữ liệu lịch sử:', error));
+        }
+        
+        // Lấy cài đặt ngưỡng
+        function getThresholds() {
+            fetch('/api/thresholds')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('temp-high').value = data.temp_threshold_high;
+                    document.getElementById('temp-low').value = data.temp_threshold_low;
+                    document.getElementById('humidity-high').value = data.humidity_threshold_high;
+                    document.getElementById('humidity-low').value = data.humidity_threshold_low;
+                })
+                .catch(error => console.error('Lỗi khi lấy cài đặt ngưỡng:', error));
+        }
+        
+        // Xử lý gửi form cài đặt ngưỡng
+        document.getElementById('threshold-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const data = {
+                temp_threshold_high: parseFloat(document.getElementById('temp-high').value),
+                temp_threshold_low: parseFloat(document.getElementById('temp-low').value),
+                humidity_threshold_high: parseFloat(document.getElementById('humidity-high').value),
+                humidity_threshold_low: parseFloat(document.getElementById('humidity-low').value)
+            };
+            
+            fetch('/api/thresholds', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                alert('Đã lưu cài đặt ngưỡng thành công!');
+            })
+            .catch(error => {
+                console.error('Lỗi khi lưu cài đặt ngưỡng:', error);
+                alert('Lỗi khi lưu cài đặt ngưỡng!');
+            });
+        });
+        
+        // Khởi tạo trang
+        window.addEventListener('load', function() {
+            initChart();
+            getThresholds();
+            updateCurrentData();
+            updateHistoryChart();
+            
+            // Cập nhật dữ liệu mỗi 5 giây
+            setInterval(updateCurrentData, 5000);
+            setInterval(updateHistoryChart, 30000);
+        });
     </script>
 </body>
 </html>
