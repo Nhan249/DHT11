@@ -161,7 +161,12 @@ def index():
 
 @app.route('/api/current', methods=['GET'])
 def get_current_data():
-    return jsonify(current_data)
+    # Thêm cache control header để tránh cache
+    response = jsonify(current_data)
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
