@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Quản Lý Nhiệt Độ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .current-data {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+        .data-box {
+            text-align: center;
+            width: 200px;
+            padding: 20px;
+            margin: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .temperature {
+            background-color: #ffeded;
+        }
+        .humidity {
+            background-color: #edf5ff;
+        }
+        .value {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .unit {
+            font-size: 18px;
+        }
+        .label {
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .normal {
+            background-color: #dff2bf;
+            color: #4f8a10;
+        }
+        .warning {
+            background-color: #feefb3;
+            color: #9f6000;
+        }
+        .danger {
+            background-color: #ffbaba;
+            color: #d8000c;
+        }
+        .settings {
+            margin-top: 30px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .chart-container {
+            height: 400px;
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .last-updated {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .alert {
+            display: none;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .alert-success {
+            background-color: #dff2bf;
+            color: #4f8a10;
+        }
+        .alert-danger {
+            background-color: #ffbaba;
+            color: #d8000c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Hệ Thống Quản Lý Nhiệt Độ Từ Xa</h1>
+            <p>Sử dụng Raspberry Pi 5 và DHT11</p>
+        </div>
+        
+        <div id="alert" class="alert"></div>
+        
+        <div class="card">
+            <h2>Dữ Liệu Hiện Tại</h2>
+            <div class="current-data">
+                <div class="data-box temperature">
+                    <div class="label">Nhiệt Độ</div>
+                    <div id="current-temp" class="value">--</div>
+                    <div class="unit">°C</div>
+                    <div id="temp-status" class="status normal">Bình thường</div>
+                </div>
+                <div class="data-box humidity">
+                    <div class="label">Độ Ẩm</div>
+                    <div id="current-humidity" class="value">--</div>
+                    <div class="unit">%</div>
+                </div>
+            </div>
+            <p id="last-updated" class="last-updated">Cập nhật lần cuối: --</p>
+        </div>
+        
+        <div class="card settings">
+            <h2>Cài Đặt Ngưỡng Nhiệt Độ</h2>
+            <div class="form-group">
+                <label for="min-temp">Nhiệt độ tối thiểu (°C):</label>
+                <input type="number" id="min-temp" min="0" max="50" step="0.5">
+            </div>
+            <div class="form-group">
+                <label for="max-temp">Nhiệt độ tối đa (°C):</label>
+                <input type="number" id="max-temp" min="0" max="50" step="0.5">
+            </div>
+            <button id="save-thresholds">Lưu Cài Đặt</button>
+        </div>
+        
+        <div class="card">
+            <h2>Biểu Đồ Nhiệt Độ và Độ Ẩm</h2>
+            <div id="chart-container" class="chart-container">
+                <canvas id="temp-chart"></canvas>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Lịch Sử Dữ Liệu</h2>
+            <div id="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Thời Gian</th>
+                            <th>Nhiệt Độ (°C)</th>
+                            <th>Độ Ẩm (%)</th>
+                            <th>Trạng Thái</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-data">
+                        <tr>
+                            <td colspan="4" class="loading">Đang tải dữ liệu...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/locale/vi.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
+    <script>
+        // Khởi tạo biến toàn cục
+        let thresholds = {
+            min: {{ thresholds.min }},
+            max: {{ thresholds.max }}
+        };
+        let temperatureChart;
+        
+        // Định dạng thời gian
+        moment.locale('vi');
+        
+        // Hàm hiển thị thông báo
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = 'alert ' + type;
+            alert.style.display = 'block';
+            
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Hàm cập nhật trạng thái nhiệt độ
+        function updateTemperatureStatus(temperature) {
+            const statusElement = document.getElementById('temp-status');
+            
+            if (temperature < thresholds.min) {
+                statusElement.textContent = 'Quá thấp';
+                statusElement.className = 'status warning';
+            } else if (temperature > thresholds.max) {
+                statusElement.textContent = 'Quá cao';
+                statusElement.className = 'status danger';
+            } else {
+                statusElement.textContent = 'Bình thường';
+                statusElement.className = 'status normal';
+            }
+        }
+        
+        // Hàm lấy trạng thái nhiệt độ dưới dạng text
+        function getTemperatureStatusText(temperature) {
+            if (temperature < thresholds.min) {
+                return 'Quá thấp';
+            } else if (temperature > thresholds.max) {
+                return 'Quá cao';
+            } else {
+                return 'Bình thường';
+            }
+        }
+        
+        // Hàm lấy class CSS cho trạng thái nhiệt độ
+        function getTemperatureStatusClass(temperature) {
+            if (temperature < thresholds.min) {
+                return 'warning';
+            } else if (temperature > thresholds.max) {
+                return 'danger';
+            } else {
+                return 'normal';
+            }
+        }
+        
+        // Hàm cập nhật dữ liệu hiện tại
+        function updateCurrentData() {
+            fetch('/api/current')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.temperature !== null) {
+                        document.getElementById('current-temp').textContent = data.temperature.toFixed(1);
+                        document.getElementById('current-humidity').textContent = data.humidity.toFixed(1);
+                        document.getElementById('last-updated').textContent = 'Cập nhật lần cuối: ' + moment(data.timestamp).format('LLL');
+                        
+                        // Cập nhật trạng thái nhiệt độ
+                        updateTemperatureStatus(data.temperature);
+                        
+                        // Cập nhật ngưỡng nhiệt độ
+                        thresholds.min = data.threshold_min;
+                        thresholds.max = data.threshold_max;
+                        document.getElementById('min-temp').value = thresholds.min;
+                        document.getElementById('max-temp').value = thresholds.max;
+                    }
+                })
+                .catch(error => {
+                    console.error('Lỗi khi lấy dữ liệu hiện tại:', error);
+                });
+        }
+        
+        // Hàm cập nhật biểu đồ
+        function updateChart() {
+            fetch('/api/temperature')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        // Đảo ngược dữ liệu để hiển thị theo thứ tự thời gian
+                        data.reverse();
+                        
+                        const timestamps = data.map(item => moment(item.timestamp).format('LT'));
+                        const temperatures = data.map(item => item.temperature);
+                        const humidities = data.map(item => item.humidity);
+                        
+                        // Cập nhật dữ liệu biểu đồ
+                        temperatureChart.data.labels = timestamps;
+                        temperatureChart.data.datasets[0].data = temperatures;
+                        temperatureChart.data.datasets[1].data = humidities;
+                        temperatureChart.update();
+                        
+                        // Cập nhật bảng lịch sử
+                        updateHistoryTable(data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Lỗi khi lấy dữ liệu nhiệt độ:', error);
+                });
+        }
+        
+        // Hàm cập nhật bảng lịch sử
+        function updateHistoryTable(data) {
+            const tableBody = document.getElementById('history-data');
+            tableBody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                
+                const timeCell = document.createElement('td');
+                timeCell.textContent = moment(item.timestamp).format('LLL');
+                
+                const tempCell = document.createElement('td');
+                tempCell.textContent = item.temperature.toFixed(1);
+                
+                const humidityCell = document.createElement('td');
+                humidityCell.textContent = item.humidity.toFixed(1);
+                
+                const statusCell = document.createElement('td');
+                const statusSpan = document.createElement('span');
+                statusSpan.textContent = getTemperatureStatusText(item.temperature);
+                statusSpan.className = 'status ' + getTemperatureStatusClass(item.temperature);
+                statusCell.appendChild(statusSpan);
+                
+                row.appendChild(timeCell);
+                row.appendChild(tempCell);
+                row.appendChild(humidityCell);
+                row.appendChild(statusCell);
+                
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // Khởi tạo biểu đồ
+        function initChart() {
+            const ctx = document.getElementById('temp-chart').getContext('2d');
+            temperatureChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Nhiệt độ (°C)',
+                            data: [],
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            tension: 0.2,
+                            fill: true
+                        },
+                        {
+                            label: 'Độ ẩm (%)',
+                            data: [],
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            tension: 0.2,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Biểu đồ nhiệt độ và độ ẩm theo thời gian'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        legend: {
+                            position: 'bottom'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            suggestedMax: 50
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Khởi tạo trang
+        function initPage() {
+            // Khởi tạo biểu đồ
+            initChart();
+            
+            // Cập nhật dữ liệu ban đầu
+            updateCurrentData();
+            updateChart();
+            
+            // Cập nhật dữ liệu theo định kỳ
+            setInterval(updateCurrentData, 5000); // Cập nhật dữ liệu hiện tại mỗi 5 giây
+            setInterval(updateChart, 30000); // Cập nhật biểu đồ và lịch sử mỗi 30 giây
+            
+            // Thiết lập sự kiện cho nút lưu ngưỡng nhiệt độ
+            document.getElementById('save-thresholds').addEventListener('click', function() {
+                const minTemp = parseFloat(document.getElementById('min-temp').value);
+                const maxTemp = parseFloat(document.getElementById('max-temp').value);
+                
+                if (isNaN(minTemp) || isNaN(maxTemp)) {
+                    showAlert('Vui lòng nhập giá trị hợp lệ!', 'alert-danger');
+                    return;
+                }
+                
+                if (minTemp >= maxTemp) {
+                    showAlert('Nhiệt độ tối thiểu phải nhỏ hơn nhiệt độ tối đa!', 'alert-danger');
+                    return;
+                }
+                
+                fetch('/api/thresholds', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        min: minTemp,
+                        max: maxTemp
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert('Đã cập nhật ngưỡng nhiệt độ thành công!', 'alert-success');
+                        thresholds = data.thresholds;
+                        updateCurrentData(); // Cập nhật lại dữ liệu hiện tại
+                    } else {
+                        showAlert('Có lỗi xảy ra khi cập nhật ngưỡng nhiệt độ!', 'alert-danger');
+                    }
+                })
+                .catch(error => {
+                    showAlert('Có lỗi xảy ra khi cập nhật ngưỡng nhiệt độ!', 'alert-danger');
+                    console.error('Lỗi khi cập nhật ngưỡng nhiệt độ:', error);
+                });
+            });
+            
+            // Thiết lập giá trị ban đầu cho các trường nhập liệu
+            document.getElementById('min-temp').value = thresholds.min;
+            document.getElementById('max-temp').value = thresholds.max;
+        }
+        
+        // Khởi tạo khi trang đã tải xong
+        document.addEventListener('DOMContentLoaded', initPage);
+    </script>
+</body>
+</html>
