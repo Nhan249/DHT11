@@ -6,7 +6,9 @@ import json
 import os
 from datetime import datetime
 from adafruit_blinka.microcontroller.bcm283x.pin import Pin
-from RPLCD.i2c import CharLCD
+import board
+import busio
+import adafruit_character_lcd.character_lcd_i2c as character_lcd
 
 app = Flask(__name__)
 
@@ -22,9 +24,7 @@ default_config = {
     'humidity_threshold_high': 80.0,
     'humidity_threshold_low': 40.0,
     'lcd_enabled': True,
-    'lcd_address': 0x27,  # Địa chỉ I2C LCD 1602 phổ biến (có thể là 0x3F)
-    'lcd_columns': 16,
-    'lcd_rows': 2
+    'lcd_address': 0x27  # Địa chỉ I2C mặc định của LCD
 }
 
 # Default message templates
@@ -45,85 +45,71 @@ current_data = {
     'message': ''
 }
 
-# LCD display object
+# LCD global variable
 lcd = None
 
-# Initialize LCD 1602 I2C using RPLCD
+# Initialize LCD
 def init_lcd():
     global lcd
     try:
         config = read_config()
         if config.get('lcd_enabled', True):
-            # Khởi tạo LCD 1602 với RPLCD
-            lcd = CharLCD(
-                i2c_expander='PCF8574',
-                address=config.get('lcd_address', 0x27),
-                port=1,  # I2C port
-                cols=16,
-                rows=2,
-                dotsize=8
-            )
+            # Khởi tạo I2C bus
+            i2c = busio.I2C(board.SCL, board.SDA)
+            
+            # Khởi tạo LCD với địa chỉ I2C
+            lcd_address = config.get('lcd_address', 0x27)
+            lcd = character_lcd.Character_LCD_I2C(i2c, 16, 2, address=lcd_address)
             
             # Xóa màn hình và hiển thị thông báo khởi động
             lcd.clear()
-            lcd.write_string("DHT11 Monitor\r\nStarting...")
+            lcd.message = "DHT11 Monitor\nStarting..."
             time.sleep(2)
-            print("LCD 1602 I2C đã được khởi tạo thành công với RPLCD")
+            
+            print(f"LCD initialized successfully at address 0x{lcd_address:02X}")
             return True
     except Exception as e:
-        print(f"Lỗi khởi tạo LCD 1602 I2C: {e}")
-        print("Kiểm tra kết nối I2C và địa chỉ LCD (thường là 0x27 hoặc 0x3F)")
+        print(f"Failed to initialize LCD: {e}")
         lcd = None
         return False
 
-# Update LCD 1602 display
+# Update LCD display
 def update_lcd_display(temperature, humidity, alert=False):
     global lcd
+    if lcd is None:
+        return
+    
     try:
-        if lcd is not None:
-            # Xóa màn hình
-            lcd.clear()
-            
-            # Dòng 1: Nhiệt độ và độ ẩm (16 ký tự tối đa)
-            # Format: "T:25.5C H:60.2%"
-            line1 = f"T:{temperature:4.1f}C H:{humidity:4.1f}%"
-            
-            # Dòng 2: Trạng thái và thời gian
-            if alert:
-                line2 = "!!! CANH BAO !!!"
-            else:
-                current_time = datetime.now().strftime("%H:%M:%S")
-                line2 = f"OK      {current_time}"
-            
-            # Đảm bảo độ dài dòng không vượt quá 16 ký tự
-            line1 = line1[:16].ljust(16)
-            line2 = line2[:16].ljust(16)
-            
-            # Hiển thị thông tin lên LCD 1602
-            lcd.write_string(line1)
-            lcd.crlf()  # Xuống dòng
-            lcd.write_string(line2)
-            
+        # Xóa màn hình
+        lcd.clear()
+        
+        # Dòng 1: Nhiệt độ và độ ẩm
+        line1 = f"T:{temperature:.1f}C H:{humidity:.1f}%"
+        
+        # Dòng 2: Thời gian hoặc cảnh báo
+        if alert:
+            line2 = "!!! CANH BAO !!!"
+        else:
+            current_time = datetime.now().strftime("%H:%M:%S")
+            line2 = f"Time: {current_time}"
+        
+        # Hiển thị trên LCD
+        lcd.message = f"{line1}\n{line2}"
+        
     except Exception as e:
-        print(f"Lỗi cập nhật LCD 1602: {e}")
+        print(f"Error updating LCD: {e}")
 
-# Hiển thị thông báo khởi động trên LCD
-def show_startup_message():
+# Display custom message on LCD
+def display_lcd_message(line1, line2=""):
     global lcd
-    if lcd is not None:
-        try:
-            lcd.clear()
-            lcd.write_string("DHT11 + LCD1602\r\nSensor Starting.")
-            time.sleep(1)
-            
-            for i in range(3):
-                lcd.clear()
-                dots = '.' * (i + 1)
-                lcd.write_string(f"DHT11 + LCD1602\r\nLoading{dots}")
-                time.sleep(0.5)
-                
-        except Exception as e:
-            print(f"Lỗi hiển thị thông báo khởi động: {e}")
+    if lcd is None:
+        return
+    
+    try:
+        lcd.clear()
+        lcd.message = f"{line1}\n{line2}"
+    except Exception as e:
+        print(f"Error displaying custom message on LCD: {e}")
 
 # Ensure files exist
 def ensure_files_exist():
@@ -249,8 +235,9 @@ def read_sensor_data():
                             'message': status_message
                         }
                         
-                        # Update LCD 1602 display
-                        update_lcd_display(temperature, humidity, alert)
+                        # Update LCD display
+                        if config.get('lcd_enabled', True):
+                            update_lcd_display(temperature, humidity, alert)
                         
                         # Save data to history (save every 5 minutes)
                         current_minute = datetime.now().minute
@@ -259,39 +246,42 @@ def read_sensor_data():
                             # Save last minute to avoid saving multiple times in the same minute
                             read_sensor_data.last_save_minute = current_minute
                         
-                        print(f"Temperature: {temperature:.1f}°C, Humidity: {humidity:.1f}%, Alert: {alert}")
+                        print(f"Temperature: {temperature:.1f}°C, Humidity: {humidity:.1f}%, Alert: {alert}, Message: {status_message}")
                         success = True
                     else:
                         retry_count += 1
+                        if config.get('lcd_enabled', True):
+                            display_lcd_message("Sensor Error", f"Retry {retry_count}/{max_retries}")
                         time.sleep(1)
                 
                 except RuntimeError as e:
                     print(f"Sensor read error (try {retry_count+1}/{max_retries}): {e}")
                     retry_count += 1
+                    if config.get('lcd_enabled', True):
+                        display_lcd_message("Read Error", f"Retry {retry_count}/{max_retries}")
                     # Short wait before retry
                     time.sleep(1)
                 except Exception as e:
                     print(f"Unknown error: {e}")
                     retry_count += 1
+                    if config.get('lcd_enabled', True):
+                        display_lcd_message("Unknown Error", f"Retry {retry_count}/{max_retries}")
                     time.sleep(1)
             
             # If all retries failed, wait longer before trying again
             if not success:
                 print("Unable to read data after multiple attempts, waiting to try again...")
-                # Hiển thị lỗi trên LCD
-                if lcd is not None:
-                    try:
-                        lcd.clear()
-                        lcd.write_string("Sensor Error\r\nRetrying...")
-                    except:
-                        pass
+                if config.get('lcd_enabled', True):
+                    display_lcd_message("Sensor Failed", "Retrying...")
                 time.sleep(5)
             else:
-                # Read data every 3 seconds if successful
-                time.sleep(3)
+                # Read data every 2 seconds if successful
+                time.sleep(2)
             
     except Exception as e:
         print(f"Sensor reading thread error: {e}")
+        if config.get('lcd_enabled', True):
+            display_lcd_message("System Error", str(e)[:16])
     finally:
         dht_device.exit()
 
@@ -343,6 +333,11 @@ def update_thresholds():
         config['lcd_address'] = int(new_config['lcd_address'], 16) if isinstance(new_config['lcd_address'], str) else int(new_config['lcd_address'])
     
     save_config(config)
+    
+    # Reinitialize LCD if settings changed
+    if 'lcd_enabled' in new_config or 'lcd_address' in new_config:
+        init_lcd()
+    
     return jsonify({"status": "success", "config": config})
 
 @app.route('/api/messages', methods=['GET'])
@@ -363,35 +358,56 @@ def update_messages():
     save_messages(messages)
     return jsonify({"status": "success", "messages": messages})
 
-@app.route('/api/lcd/test', methods=['POST'])
-def test_lcd():
-    """Test LCD display with custom message"""
-    try:
-        data = request.get_json()
-        line1 = data.get('line1', 'LCD Test')
-        line2 = data.get('line2', 'Line 2')
-        
-        if lcd is not None:
-            lcd.clear()
-            lcd.write_string(f"{line1[:16]}\r\n{line2[:16]}")
-            return jsonify({"status": "success", "message": "LCD updated"})
-        else:
-            return jsonify({"status": "error", "message": "LCD not initialized"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+@app.route('/api/lcd/message', methods=['POST'])
+def send_lcd_custom_message():
+    """Send custom message to LCD"""
+    data = request.get_json()
+    line1 = data.get('line1', '')
+    line2 = data.get('line2', '')
+    duration = data.get('duration', 5)  # Display duration in seconds
+    
+    display_lcd_message(line1, line2)
+    
+    # Return to normal display after duration
+    def restore_display():
+        time.sleep(duration)
+        if current_data['temperature'] != 0:  # If we have sensor data
+            update_lcd_display(
+                current_data['temperature'], 
+                current_data['humidity'], 
+                current_data['alert']
+            )
+    
+    threading.Thread(target=restore_display, daemon=True).start()
+    
+    return jsonify({"status": "success", "message": "Custom message sent to LCD"})
+
+@app.route('/api/lcd/toggle', methods=['POST'])
+def toggle_lcd():
+    """Toggle LCD on/off"""
+    config = read_config()
+    config['lcd_enabled'] = not config.get('lcd_enabled', True)
+    save_config(config)
+    
+    if config['lcd_enabled']:
+        init_lcd()
+        return jsonify({"status": "success", "message": "LCD enabled", "lcd_enabled": True})
+    else:
+        global lcd
+        if lcd:
+            try:
+                lcd.clear()
+            except:
+                pass
+            lcd = None
+        return jsonify({"status": "success", "message": "LCD disabled", "lcd_enabled": False})
 
 if __name__ == '__main__':
     # Ensure configuration and data files exist
     ensure_files_exist()
     
-    # Initialize LCD 1602
-    print("Khởi tạo LCD 1602 I2C...")
-    init_success = init_lcd()
-    
-    if init_success:
-        show_startup_message()
-    else:
-        print("Tiếp tục chạy mà không có LCD...")
+    # Initialize LCD
+    init_lcd()
     
     # Start sensor data reading thread
     sensor_thread = threading.Thread(target=read_sensor_data, daemon=True)
@@ -399,5 +415,4 @@ if __name__ == '__main__':
     
     # Start Flask server
     # Use host='0.0.0.0' to make it accessible to all devices on the network
-    print("Khởi động Flask server...")
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
